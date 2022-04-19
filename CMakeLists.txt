@@ -26,6 +26,7 @@ add_definitions(-D_USE_MATH_DEFINES)
 
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(opengv REQUIRED)
 
 include_directories(
@@ -34,6 +35,7 @@ include_directories(
         ${EIGEN3_INCLUDE_DIR}
         ${PROJECT_SOURCE_DIR}
         ${opengv_INCLUDE_DIR}
+        ${YAML_CPP_INCLUDE_DIR}
 )
 
 
@@ -43,4 +45,4 @@ include_directories(
 
 
 add_executable(main main.cpp)
-target_link_libraries(main ${OpenCV_LIBS} ${EIGEN3_LIBS} opengv)
+target_link_libraries(main ${OpenCV_LIBS} ${EIGEN3_LIBS} opengv ${YAML_CPP_LIBRARIES})

@@ -1,0 +1,9 @@
+n_points: 300
+stdev_noise: 0.5
+
+n_iter_cv: 30
+err_th_cv: 1.0
+confidence: 0.9
+
+n_iter_gv: 30
+err_th_gv: 2.0

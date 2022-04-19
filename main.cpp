@@ -18,6 +18,7 @@
 
 #include "ASensor.hpp"
 #include "Timer.hpp"
+#include "ConfigReader.hpp"
 
 #include <iostream>
 #include <cstdlib>
@@ -49,6 +50,9 @@ int main(int argc, char** argv){
 
     Timer timer;
 
+    // Let's load config
+    Config config = readParameterFile(std::filesystem::current_path().string() + "/../config.yaml");
+
     // initialize K
     Eigen::Matrix3d K;
     K << 2666.666, 0, 960,
@@ -57,9 +61,15 @@ int main(int argc, char** argv){
     cv::Mat K_cv = (cv::Mat_<float>(3,3) << K(0,0), 0, K(0,2),
                0, K(1,1), K(1,2),
                0, 0, 1);
-    int n_points = 100;
+    int n_points = config.n_points;
     cv::Point2d principal_pt(K(0,2), K(1,2));
     std::shared_ptr<ASensor> cam(new ASensor(K));
+
+    // Define random generator with Gaussian distribution
+    const double mean = 0.0;
+    const double stddev = config.stdev_noise;
+    std::mt19937 generator(std::random_device{}());
+    std::normal_distribution<double> dist(mean, stddev);
     
     // Let's load images
     std::string image_path0 = std::filesystem::current_path().string() + "/../cube.png";
@@ -88,8 +98,7 @@ int main(int argc, char** argv){
         p3ds_cv.push_back(cv::Point3d(x,y,z));
     }
 
-
-    // Let's compute the 3D isometry of the two cameras
+    // Let's compute the 6D pose of the camera
     Eigen::Matrix3d w_R_cam1;
     Eigen::Quaternion<double> q1(1.0,0.0,0.0,0.0);
     w_R_cam1 = q1.matrix();
@@ -99,13 +108,18 @@ int main(int argc, char** argv){
     w_T_cam1.linear() = w_R_cam1;
     
 
-    // Compute keypoints in the cube images
+    // Compute keypoints in the cube images, with Gaussian noise
     std::vector<cv::KeyPoint> kps;
     std::vector<cv::Point2d> p2ds_cv;
     std::vector<Eigen::Vector2d>  p2ds;
     for (auto p3d : p3ds){
         Eigen::Vector2d p2d;
         cam->project(w_T_cam1 * p3d, p2d);
+
+        // add noise
+        p2d.x() += dist(generator);
+        p2d.y() += dist(generator);
+
         kps.push_back(cv::KeyPoint(cv::Point2d(p2d.x(), p2d.y()),5));
         p2ds_cv.push_back(cv::Point2d(p2d.x(), p2d.y()));
         p2ds.push_back(p2d);
@@ -120,10 +134,11 @@ int main(int argc, char** argv){
     cv::Mat tvec, rvec;
     cv::Mat inliers;
     bool use_extrinsic_guess = false;
-    float confidence = 0.99;
-    uint nmaxiter = 30;
-    double errth = 2;
+    float confidence = config.confidence;
+    uint nmaxiter = config.n_iter_cv;
+    double errth = config.err_th_cv;
 
+    timer.start();
     cv::solvePnPRansac(
                 p3ds_cv,
                 p2ds_cv,
@@ -138,15 +153,19 @@ int main(int argc, char** argv){
                 inliers,
                 cv::SOLVEPNP_P3P
         );
+    timer.stop();
     
     std::cout << "Open CV pose estimation" << std::endl;
     std::cout << tvec << std::endl;
+    std::cout << "Timing" << std::endl;
+    std::cout << timer.elapsedMilliseconds() << std::endl;
 
     // Let's try with openGV
     std::vector<Eigen::Vector3d> bearings = cam->getRays(p2ds);
     opengv::bearingVectors_t bearings_gv;
     opengv::points_t p3ds_gv;
 
+    timer.start();
     for (size_t i = 0 ; i < bearings.size() ; i++){
         bearings_gv.push_back(bearings.at(i));
         p3ds_gv.push_back(p3ds.at(i));
@@ -166,15 +185,18 @@ int main(int argc, char** argv){
     
     // run ransac
     ransac.sac_model_ = absposeproblem_ptr;
-    ransac.threshold_ = 2.0;
-    ransac.max_iterations_ = 30;
+    ransac.threshold_ = config.err_th_gv;
+    ransac.max_iterations_ = config.n_iter_gv;
     ransac.computeModel();
     // get the result
     opengv::transformation_t best_transformation =
         ransac.model_coefficients_;
+    timer.stop();
     
     std::cout << "opengv results" << std::endl;
     std::cout << best_transformation << std::endl;
+    std::cout << "Timing" << std::endl;
+    std::cout << timer.elapsedMilliseconds() << std::endl;
         
 
 }
